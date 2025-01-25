@@ -62,21 +62,14 @@ const CollisionVisualizer = () => {
       ctx.restore();
     });
 
-    // Draw collision point if exists and shapes are colliding
-    if (collisionPoint && isColliding) {
+    // Draw collision point if exists
+    if (collisionPoint) {
       ctx.beginPath();
       ctx.arc(collisionPoint.x, collisionPoint.y, 5, 0, Math.PI * 2);
       ctx.fillStyle = '#ef4444';
       ctx.fill();
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Add a pulsing effect to make the point more visible
-      ctx.beginPath();
-      ctx.arc(collisionPoint.x, collisionPoint.y, 10, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
-      ctx.lineWidth = 1;
       ctx.stroke();
     }
   }, [shapes, isColliding, collisionPoint]);
