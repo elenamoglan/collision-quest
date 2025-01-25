@@ -1,7 +1,7 @@
 import { Vector2 } from './vector';
 
 interface Shape {
-  points: { x: number; y: number };
+  points: Array<{ x: number; y: number }>;
   position: { x: number; y: number };
   rotation: number;
 }

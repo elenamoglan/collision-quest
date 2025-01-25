@@ -3,7 +3,7 @@ import { gjk, sat, linCanny, vClip } from '../utils/collision';
 
 type Algorithm = 'GJK' | 'SAT' | 'Lin-Canny' | 'V-Clip';
 type Shape = {
-  points: { x: number; y: number }[];
+  points: Array<{ x: number; y: number }>;
   position: { x: number; y: number };
   rotation: number;
 };
