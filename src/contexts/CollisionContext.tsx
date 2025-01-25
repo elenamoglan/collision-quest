@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState } from 'react';
+import { gjk, sat } from '../utils/collision';
 
 type Algorithm = 'GJK' | 'SAT';
 type Shape = {
