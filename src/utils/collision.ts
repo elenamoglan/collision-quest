@@ -1,7 +1,7 @@
 import { Vector2 } from './vector';
 
 interface Shape {
-  points: { x: number; y: number }[];
+  points: { x: number; y: number };
   position: { x: number; y: number };
   rotation: number;
 }
@@ -9,6 +9,7 @@ interface Shape {
 interface CollisionResult {
   colliding: boolean;
   debug: string[];
+  collisionPoint?: { x: number; y: number };
 }
 
 // Helper function to transform points based on position and rotation
@@ -66,11 +67,20 @@ export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
 
   debug.push("Starting GJK algorithm");
   
-  // Main GJK loop
+  let closestPoint = null;
+  let minDistance = Infinity;
+
+  // Main GJK loop with collision point detection
   for (let i = 0; i < 32; i++) {
     point = getSupport(direction);
     
-    // If point is not past origin in current direction, no collision
+    // Track closest point to origin
+    const distance = point.length();
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestPoint = point;
+    }
+    
     if (point.dot(direction) <= 0) {
       debug.push("No collision - point not past origin");
       return { colliding: false, debug };
@@ -78,10 +88,16 @@ export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
     
     simplex.push(point);
     
-    // Check if origin is enclosed by simplex
     if (handleSimplex(simplex, direction)) {
+      // Calculate collision point as midpoint between closest features
+      const p1 = support(points1, direction);
+      const p2 = support(points2, direction.negate());
+      const collisionPoint = {
+        x: (p1.x + p2.x) / 2,
+        y: (p1.y + p2.y) / 2
+      };
       debug.push("Collision detected - origin enclosed by simplex");
-      return { colliding: true, debug };
+      return { colliding: true, debug, collisionPoint };
     }
   }
   

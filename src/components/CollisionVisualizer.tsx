@@ -1,9 +1,19 @@
 import React, { useRef, useEffect } from 'react';
 import { useCollision } from '../contexts/CollisionContext';
+import { Button } from './ui/button';
+import { Select } from './ui/select';
 
 const CollisionVisualizer = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { shapes, updateShape, isColliding, debugInfo } = useCollision();
+  const { 
+    shapes, 
+    updateShape, 
+    isColliding, 
+    debugInfo, 
+    collisionPoint,
+    selectedPresets,
+    setShapePreset 
+  } = useCollision();
   
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -51,7 +61,18 @@ const CollisionVisualizer = () => {
       
       ctx.restore();
     });
-  }, [shapes, isColliding]);
+
+    // Draw collision point if exists
+    if (collisionPoint) {
+      ctx.beginPath();
+      ctx.arc(collisionPoint.x, collisionPoint.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = '#ef4444';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }, [shapes, isColliding, collisionPoint]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -88,6 +109,23 @@ const CollisionVisualizer = () => {
 
   return (
     <div className="relative bg-white rounded-lg shadow-lg p-4">
+      <div className="flex gap-4 mb-4">
+        {[0, 1].map((index) => (
+          <div key={index} className="flex items-center gap-2">
+            <label className="text-sm font-medium">Shape {index + 1}:</label>
+            <select
+              value={selectedPresets[index]}
+              onChange={(e) => setShapePreset(index as 0 | 1, e.target.value as any)}
+              className="border rounded px-2 py-1"
+            >
+              <option value="square">Square</option>
+              <option value="triangle">Triangle</option>
+              <option value="pentagon">Pentagon</option>
+              <option value="star">Star</option>
+            </select>
+          </div>
+        ))}
+      </div>
       <canvas
         ref={canvasRef}
         width={800}
