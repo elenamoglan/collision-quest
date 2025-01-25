@@ -31,10 +31,7 @@ export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   const points1 = transformPoints(shapeA);
   const points2 = transformPoints(shapeB);
 
-  // Initial direction
-  const direction = new Vector2(1, 0);
-  
-  // Get support point in direction
+  // Support function to get furthest point in a direction
   const support = (points: Vector2[], dir: Vector2): Vector2 => {
     let furthestPoint = points[0];
     let maxDot = furthestPoint.dot(dir);
@@ -49,31 +46,41 @@ export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
     return furthestPoint;
   };
 
-  // Simplex helper
+  // Get Minkowski Difference support point
+  const getSupport = (dir: Vector2): Vector2 => {
+    const p1 = support(points1, dir);
+    const p2 = support(points2, dir.negate());
+    return p1.sub(p2);
+  };
+
+  // Initialize simplex
   const simplex: Vector2[] = [];
+  let direction = new Vector2(1, 0);
+
+  // Get first point for simplex
+  let point = getSupport(direction);
+  simplex.push(point);
   
-  // Add first point
-  const firstPoint = support(points1, direction).sub(support(points2, direction.negate()));
-  simplex.push(firstPoint);
-  
-  // New direction towards origin
-  let newDirection = firstPoint.negate();
-  
+  // New direction is towards origin
+  direction = point.negate();
+
   debug.push("Starting GJK algorithm");
   
   // Main GJK loop
   for (let i = 0; i < 32; i++) {
-    const newPoint = support(points1, newDirection).sub(support(points2, newDirection.negate()));
+    point = getSupport(direction);
     
-    if (newPoint.dot(newDirection) <= 0) {
-      debug.push("No collision detected");
+    // If point is not past origin in current direction, no collision
+    if (point.dot(direction) <= 0) {
+      debug.push("No collision - point not past origin");
       return { colliding: false, debug };
     }
     
-    simplex.push(newPoint);
+    simplex.push(point);
     
-    if (handleSimplex(simplex, newDirection)) {
-      debug.push("Collision detected!");
+    // Check if origin is enclosed by simplex
+    if (handleSimplex(simplex, direction)) {
+      debug.push("Collision detected - origin enclosed by simplex");
       return { colliding: true, debug };
     }
   }
@@ -82,7 +89,6 @@ export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   return { colliding: false, debug };
 };
 
-// SAT Algorithm implementation
 export const sat = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
@@ -137,44 +143,74 @@ export const sat = (shapeA: Shape, shapeB: Shape): CollisionResult => {
 const handleSimplex = (simplex: Vector2[], direction: Vector2): boolean => {
   if (simplex.length === 2) {
     return handleLine(simplex, direction);
+  } else if (simplex.length === 3) {
+    return handleTriangle(simplex, direction);
   }
-  return handleTriangle(simplex, direction);
+  return false;
 };
 
 const handleLine = (simplex: Vector2[], direction: Vector2): boolean => {
-  const b = simplex[0];
-  const a = simplex[1];
-  const ab = b.sub(a);
-  const ao = a.negate();
-  direction.copy(ab.triple(ao).triple(ab));
+  const a = simplex[1];  // Latest point added
+  const b = simplex[0];  // First point
+  
+  const ab = b.sub(a);   // Vector from A to B
+  const ao = new Vector2(0, 0).sub(a);  // Vector from A to origin
+  
+  // Get perpendicular to AB towards origin
+  const perp = tripleProduct(ab, ao, ab);
+  
+  if (perp.length() === 0) {
+    // Origin is on AB line
+    const abLen = ab.length();
+    const aLen = a.length();
+    const bLen = b.length();
+    return aLen <= abLen && bLen <= abLen;
+  }
+  
+  // Set new direction to perpendicular
+  direction.copy(perp);
   return false;
 };
 
 const handleTriangle = (simplex: Vector2[], direction: Vector2): boolean => {
-  const c = simplex[0];
+  const a = simplex[2];  // Latest point
   const b = simplex[1];
-  const a = simplex[2];
+  const c = simplex[0];  // First point
+  
   const ab = b.sub(a);
   const ac = c.sub(a);
-  const ao = a.negate();
-  const abc = ab.cross(ac);
+  const ao = new Vector2(0, 0).sub(a);  // Vector to origin
   
-  if (abc.triple(ac).dot(ao) > 0) {
-    simplex.splice(1, 1);
-    direction.copy(ac.triple(ao).triple(ac));
+  const abPerp = tripleProduct(ac, ab, ab);
+  const acPerp = tripleProduct(ab, ac, ac);
+  
+  if (abPerp.dot(ao) > 0) {
+    // Origin outside AB edge
+    simplex.splice(0, 1);  // Remove C
+    direction.copy(abPerp);
     return false;
   }
   
-  if (ab.triple(abc).dot(ao) > 0) {
-    simplex.splice(0, 1);
-    direction.copy(ab.triple(ao).triple(ab));
+  if (acPerp.dot(ao) > 0) {
+    // Origin outside AC edge
+    simplex.splice(1, 1);  // Remove B
+    direction.copy(acPerp);
     return false;
   }
   
+  // Origin inside triangle
   return true;
 };
 
-// Lin-Canny Algorithm implementation
+const tripleProduct = (a: Vector2, b: Vector2, c: Vector2): Vector2 => {
+  const ac = a.dot(c);
+  const bc = b.dot(c);
+  return new Vector2(
+    b.x * ac - a.x * bc,
+    b.y * ac - a.y * bc
+  );
+};
+
 export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
