@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState } from 'react';
-import { gjk, sat } from '../utils/collision';
+import { gjk, sat, linCanny, vClip } from '../utils/collision';
 
-type Algorithm = 'GJK' | 'SAT';
+type Algorithm = 'GJK' | 'SAT' | 'Lin-Canny' | 'V-Clip';
 type Shape = {
   points: { x: number; y: number }[];
   position: { x: number; y: number };
@@ -54,14 +54,27 @@ export const CollisionProvider = ({ children }: { children: React.ReactNode }) =
   };
 
   const checkCollision = (currentShapes: [Shape, Shape]) => {
-    if (algorithm === 'GJK') {
-      const result = gjk(currentShapes[0], currentShapes[1]);
-      setIsColliding(result.colliding);
-      setDebugInfo(result.debug);
-    } else {
-      const result = sat(currentShapes[0], currentShapes[1]);
-      setIsColliding(result.colliding);
-      setDebugInfo(result.debug);
+    switch (algorithm) {
+      case 'GJK':
+        const gjkResult = gjk(currentShapes[0], currentShapes[1]);
+        setIsColliding(gjkResult.colliding);
+        setDebugInfo(gjkResult.debug);
+        break;
+      case 'SAT':
+        const satResult = sat(currentShapes[0], currentShapes[1]);
+        setIsColliding(satResult.colliding);
+        setDebugInfo(satResult.debug);
+        break;
+      case 'Lin-Canny':
+        const linCannyResult = linCanny(currentShapes[0], currentShapes[1]);
+        setIsColliding(linCannyResult.colliding);
+        setDebugInfo(linCannyResult.debug);
+        break;
+      case 'V-Clip':
+        const vClipResult = vClip(currentShapes[0], currentShapes[1]);
+        setIsColliding(vClipResult.colliding);
+        setDebugInfo(vClipResult.debug);
+        break;
     }
   };
 

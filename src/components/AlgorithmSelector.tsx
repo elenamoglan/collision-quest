@@ -28,6 +28,26 @@ const AlgorithmSelector = () => {
         >
           Separating Axis Theorem
         </button>
+        <button
+          className={`w-full p-3 rounded-lg text-left ${
+            algorithm === 'Lin-Canny'
+              ? 'bg-algorithm-primary text-white'
+              : 'bg-gray-100 hover:bg-gray-200'
+          }`}
+          onClick={() => setAlgorithm('Lin-Canny')}
+        >
+          Lin-Canny Algorithm
+        </button>
+        <button
+          className={`w-full p-3 rounded-lg text-left ${
+            algorithm === 'V-Clip'
+              ? 'bg-algorithm-primary text-white'
+              : 'bg-gray-100 hover:bg-gray-200'
+          }`}
+          onClick={() => setAlgorithm('V-Clip')}
+        >
+          V-Clip Algorithm
+        </button>
       </div>
       
       <div className="mt-6 p-4 bg-gray-50 rounded">
