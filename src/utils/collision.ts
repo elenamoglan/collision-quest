@@ -101,6 +101,16 @@ const findClosestPoint = (points1: Vector2[], points2: Vector2[]): { x: number; 
   return closestPoint;
 }
 
+// Add the missing helper function
+const getClosestPointOnLineSegment = (point: Vector2, lineStart: Vector2, lineEnd: Vector2): Vector2 => {
+  const line = lineEnd.sub(lineStart);
+  const len = line.length();
+  if (len === 0) return lineStart;
+  
+  const t = Math.max(0, Math.min(1, point.sub(lineStart).dot(line) / (len * len)));
+  return lineStart.add(line.scale(t));
+};
+
 export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
@@ -364,7 +374,6 @@ export const sat = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   return { colliding: true, debug, collisionPoint };
 };
 
-// Helper for GJK simplex handling
 const handleSimplex = (simplex: Vector2[], direction: Vector2): boolean => {
   if (simplex.length === 2) {
     return handleLine(simplex, direction);
