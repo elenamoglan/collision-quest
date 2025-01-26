@@ -125,21 +125,31 @@ export const sat = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   };
 
   // Project points onto axis
-  const project = (points: Vector2[], axis: Vector2): { min: number; max: number } => {
+  const project = (points: Vector2[], axis: Vector2): { min: number; max: number; minPoint: Vector2; maxPoint: Vector2 } => {
     let min = points[0].dot(axis);
     let max = min;
+    let minPoint = points[0];
+    let maxPoint = points[0];
     
     for (let i = 1; i < points.length; i++) {
       const projection = points[i].dot(axis);
-      min = Math.min(min, projection);
-      max = Math.max(max, projection);
+      if (projection < min) {
+        min = projection;
+        minPoint = points[i];
+      }
+      if (projection > max) {
+        max = projection;
+        maxPoint = points[i];
+      }
     }
     
-    return { min, max };
+    return { min, max, minPoint, maxPoint };
   };
 
   // Check projections for overlap
   const axes = [...getAxes(points1), ...getAxes(points2)];
+  let minOverlap = Infinity;
+  let collisionPoint = null;
   
   for (const axis of axes) {
     const projection1 = project(points1, axis);
@@ -149,10 +159,116 @@ export const sat = (shapeA: Shape, shapeB: Shape): CollisionResult => {
       debug.push("Gap found - no collision");
       return { colliding: false, debug };
     }
+
+    const overlap = Math.min(projection1.max - projection2.min, projection2.max - projection1.min);
+    if (overlap < minOverlap) {
+      minOverlap = overlap;
+      // Calculate collision point as the midpoint of overlapping region
+      collisionPoint = {
+        x: (projection1.maxPoint.x + projection2.minPoint.x) / 2,
+        y: (projection1.maxPoint.y + projection2.minPoint.y) / 2
+      };
+    }
   }
   
   debug.push("No separating axis found - collision detected!");
-  return { colliding: true, debug };
+  return { colliding: true, debug, collisionPoint };
+};
+
+export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
+  const debug: string[] = [];
+  const points1 = transformPoints(shapeA);
+  const points2 = transformPoints(shapeB);
+  
+  debug.push("Starting Lin-Canny algorithm");
+
+  let minDistance = Infinity;
+  let colliding = false;
+  let collisionPoint = null;
+
+  // Check each vertex of shape A against edges of shape B
+  for (let i = 0; i < points1.length; i++) {
+    const point = points1[i];
+    
+    for (let j = 0; j < points2.length; j++) {
+      const edge1 = points2[j];
+      const edge2 = points2[(j + 1) % points2.length];
+      
+      const edgeVector = edge2.sub(edge1);
+      const pointVector = point.sub(edge1);
+      
+      const projection = pointVector.dot(edgeVector) / edgeVector.dot(edgeVector);
+      const closestPoint = edge1.add(edgeVector.scale(Math.max(0, Math.min(1, projection))));
+      
+      const distance = point.sub(closestPoint).length();
+      if (distance < minDistance) {
+        minDistance = distance;
+        collisionPoint = {
+          x: (point.x + closestPoint.x) / 2,
+          y: (point.y + closestPoint.y) / 2
+        };
+      }
+      
+      if (distance < 0.0001) {
+        colliding = true;
+        break;
+      }
+    }
+    
+    if (colliding) break;
+  }
+  
+  debug.push(`Minimum distance between shapes: ${minDistance.toFixed(4)}`);
+  return { colliding, debug, collisionPoint };
+};
+
+export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
+  const debug: string[] = [];
+  const points1 = transformPoints(shapeA);
+  const points2 = transformPoints(shapeB);
+  
+  debug.push("Starting V-Clip algorithm");
+
+  let colliding = false;
+  let minDistance = Infinity;
+  let collisionPoint = null;
+
+  // Find closest vertex-edge pair
+  for (let i = 0; i < points1.length; i++) {
+    const vertex = points1[i];
+    
+    for (let j = 0; j < points2.length; j++) {
+      const edge1 = points2[j];
+      const edge2 = points2[(j + 1) % points2.length];
+      
+      const edgeDir = edge2.sub(edge1).normalize();
+      const vertexToEdge = vertex.sub(edge1);
+      const projection = vertexToEdge.dot(edgeDir);
+      
+      if (projection >= 0 && projection <= edge2.sub(edge1).length()) {
+        const closestPoint = edge1.add(edgeDir.scale(projection));
+        const distance = vertex.sub(closestPoint).length();
+        
+        if (distance < minDistance) {
+          minDistance = distance;
+          collisionPoint = {
+            x: (vertex.x + closestPoint.x) / 2,
+            y: (vertex.y + closestPoint.y) / 2
+          };
+        }
+        
+        if (distance < 0.0001) {
+          colliding = true;
+          break;
+        }
+      }
+    }
+    
+    if (colliding) break;
+  }
+  
+  debug.push(`Minimum separation distance: ${minDistance.toFixed(4)}`);
+  return { colliding, debug, collisionPoint };
 };
 
 // Helper for GJK simplex handling
@@ -225,92 +341,4 @@ const tripleProduct = (a: Vector2, b: Vector2, c: Vector2): Vector2 => {
     b.x * ac - a.x * bc,
     b.y * ac - a.y * bc
   );
-};
-
-export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
-  const debug: string[] = [];
-  const points1 = transformPoints(shapeA);
-  const points2 = transformPoints(shapeB);
-  
-  debug.push("Starting Lin-Canny algorithm");
-
-  // Find closest features between polygons
-  let minDistance = Infinity;
-  let colliding = false;
-
-  // Check each vertex of shape A against edges of shape B
-  for (let i = 0; i < points1.length; i++) {
-    const point = points1[i];
-    
-    for (let j = 0; j < points2.length; j++) {
-      const edge1 = points2[j];
-      const edge2 = points2[(j + 1) % points2.length];
-      
-      // Calculate distance from point to edge
-      const edgeVector = edge2.sub(edge1);
-      const pointVector = point.sub(edge1);
-      
-      const projection = pointVector.dot(edgeVector) / edgeVector.dot(edgeVector);
-      const closestPoint = edge1.add(edgeVector.scale(Math.max(0, Math.min(1, projection))));
-      
-      const distance = point.sub(closestPoint).length();
-      minDistance = Math.min(minDistance, distance);
-      
-      if (distance < 0.0001) {
-        colliding = true;
-        debug.push("Collision detected at vertex-edge pair");
-        break;
-      }
-    }
-    
-    if (colliding) break;
-  }
-  
-  debug.push(`Minimum distance between shapes: ${minDistance.toFixed(4)}`);
-  return { colliding, debug };
-};
-
-// V-Clip Algorithm implementation
-export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
-  const debug: string[] = [];
-  const points1 = transformPoints(shapeA);
-  const points2 = transformPoints(shapeB);
-  
-  debug.push("Starting V-Clip algorithm");
-
-  let colliding = false;
-  let minDistance = Infinity;
-
-  // Find closest vertex-edge pair
-  for (let i = 0; i < points1.length; i++) {
-    const vertex = points1[i];
-    
-    for (let j = 0; j < points2.length; j++) {
-      const edge1 = points2[j];
-      const edge2 = points2[(j + 1) % points2.length];
-      
-      // Calculate closest point on edge
-      const edgeDir = edge2.sub(edge1).normalize();
-      const vertexToEdge = vertex.sub(edge1);
-      const projection = vertexToEdge.dot(edgeDir);
-      
-      if (projection >= 0 && projection <= edge2.sub(edge1).length()) {
-        const closestPoint = edge1.add(edgeDir.scale(projection));
-        const distance = vertex.sub(closestPoint).length();
-        
-        minDistance = Math.min(minDistance, distance);
-        
-        if (distance < 0.0001) {
-          colliding = true;
-          debug.push("Collision detected between vertex and edge");
-          break;
-        }
-      }
-    }
-    
-    if (colliding) break;
-  }
-  
-  debug.push(`Minimum separation distance: ${minDistance.toFixed(4)}`);
-  return { colliding, debug };
 };
