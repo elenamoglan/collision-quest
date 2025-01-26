@@ -26,7 +26,58 @@ const transformPoints = (shape: Shape): Vector2[] => {
   });
 };
 
-// GJK Algorithm implementation
+// Helper function to find the closest point between two shapes
+const findClosestPoint = (points1: Vector2[], points2: Vector2[]): { x: number; y: number } => {
+  let minDistance = Infinity;
+  let closestPoint = { x: 0, y: 0 };
+
+  for (let i = 0; i < points1.length; i++) {
+    const p1 = points1[i];
+    const p1Next = points1[(i + 1) % points1.length];
+    
+    for (let j = 0; j < points2.length; j++) {
+      const p2 = points2[j];
+      const p2Next = points2[(j + 1) % points2.length];
+      
+      // Check vertex-vertex distances
+      const dist = Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestPoint = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+      }
+      
+      // Check vertex-edge distances
+      const edgePoint1 = getClosestPointOnLineSegment(p2, p1, p1Next);
+      const edgePoint2 = getClosestPointOnLineSegment(p1, p2, p2Next);
+      
+      const edgeDist1 = Math.sqrt((edgePoint1.x - p2.x) ** 2 + (edgePoint1.y - p2.y) ** 2);
+      const edgeDist2 = Math.sqrt((edgePoint2.x - p1.x) ** 2 + (edgePoint2.y - p1.y) ** 2);
+      
+      if (edgeDist1 < minDistance) {
+        minDistance = edgeDist1;
+        closestPoint = { x: (edgePoint1.x + p2.x) / 2, y: (edgePoint1.y + p2.y) / 2 };
+      }
+      if (edgeDist2 < minDistance) {
+        minDistance = edgeDist2;
+        closestPoint = { x: (edgePoint2.x + p1.x) / 2, y: (edgePoint2.y + p1.y) / 2 };
+      }
+    }
+  }
+  
+  return closestPoint;
+};
+
+const getClosestPointOnLineSegment = (p: Vector2, a: Vector2, b: Vector2): Vector2 => {
+  const ab = new Vector2(b.x - a.x, b.y - a.y);
+  const ap = new Vector2(p.x - a.x, p.y - a.y);
+  const t = Math.max(0, Math.min(1, ap.dot(ab) / ab.dot(ab)));
+  return new Vector2(
+    a.x + t * ab.x,
+    a.y + t * ab.y
+  );
+};
+
+// Update GJK algorithm to use the new collision point calculation
 export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
@@ -89,13 +140,8 @@ export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
     simplex.push(point);
     
     if (handleSimplex(simplex, direction)) {
-      // Calculate collision point as midpoint between closest features
-      const p1 = support(points1, direction);
-      const p2 = support(points2, direction.negate());
-      const collisionPoint = {
-        x: (p1.x + p2.x) / 2,
-        y: (p1.y + p2.y) / 2
-      };
+      // Calculate collision point using the new method
+      const collisionPoint = findClosestPoint(points1, points2);
       debug.push("Collision detected - origin enclosed by simplex");
       return { colliding: true, debug, collisionPoint };
     }
@@ -105,6 +151,7 @@ export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   return { colliding: false, debug };
 };
 
+// Update SAT algorithm
 export const sat = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
@@ -163,11 +210,8 @@ export const sat = (shapeA: Shape, shapeB: Shape): CollisionResult => {
     const overlap = Math.min(projection1.max - projection2.min, projection2.max - projection1.min);
     if (overlap < minOverlap) {
       minOverlap = overlap;
-      // Calculate collision point as the midpoint of overlapping region
-      collisionPoint = {
-        x: (projection1.maxPoint.x + projection2.minPoint.x) / 2,
-        y: (projection1.maxPoint.y + projection2.minPoint.y) / 2
-      };
+      // Calculate collision point using the new method
+      collisionPoint = findClosestPoint(points1, points2);
     }
   }
   
@@ -175,6 +219,7 @@ export const sat = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   return { colliding: true, debug, collisionPoint };
 };
 
+// Update Lin-Canny algorithm
 export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
@@ -222,6 +267,7 @@ export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   return { colliding, debug, collisionPoint };
 };
 
+// Update V-Clip algorithm
 export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
