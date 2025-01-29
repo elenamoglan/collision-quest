@@ -120,47 +120,64 @@ export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
 
   let minDistance = Infinity;
   let colliding = false;
-  let collisionPoint = null;
+  let closestPoint = null;
 
   // Find closest features between shapes
-  const closestPoint = findClosestPoint(points1, points2);
-  
-  // Check if shapes are colliding by checking distances between all vertices and edges
   for (let i = 0; i < points1.length; i++) {
     const vertex = points1[i];
+    const nextVertex = points1[(i + 1) % points1.length];
     
     for (let j = 0; j < points2.length; j++) {
-      const edge1 = points2[j];
-      const edge2 = points2[(j + 1) % points2.length];
+      const otherVertex = points2[j];
+      const nextOtherVertex = points2[(j + 1) % points2.length];
       
-      const edgeVector = edge2.sub(edge1);
-      const edgeLength = edgeVector.length();
-      const normalizedEdge = edgeVector.scale(1 / edgeLength);
+      // Check vertex-vertex distance
+      const vertexDistance = vertex.sub(otherVertex).length();
+      if (vertexDistance < minDistance) {
+        minDistance = vertexDistance;
+        closestPoint = {
+          x: (vertex.x + otherVertex.x) / 2,
+          y: (vertex.y + otherVertex.y) / 2
+        };
+      }
       
-      const vertexToEdge = vertex.sub(edge1);
-      const projection = vertexToEdge.dot(normalizedEdge);
-      
-      if (projection >= 0 && projection <= edgeLength) {
-        const closestPoint = edge1.add(normalizedEdge.scale(projection));
-        const distance = vertex.sub(closestPoint).length();
+      // Check vertex-edge distances
+      const edge = nextOtherVertex.sub(otherVertex);
+      const edgeLength = edge.length();
+      if (edgeLength > 0) {
+        const normalized = edge.scale(1 / edgeLength);
+        const vertexToEdgeStart = vertex.sub(otherVertex);
+        const projection = vertexToEdgeStart.dot(normalized);
         
-        if (distance < minDistance) {
-          minDistance = distance;
-          collisionPoint = {
-            x: (vertex.x + closestPoint.x) / 2,
-            y: (vertex.y + closestPoint.y) / 2
-          };
-        }
-        
-        if (distance < 0.1) {
-          colliding = true;
+        if (projection >= 0 && projection <= edgeLength) {
+          const closestOnEdge = otherVertex.add(normalized.scale(projection));
+          const distance = vertex.sub(closestOnEdge).length();
+          
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestPoint = {
+              x: (vertex.x + closestOnEdge.x) / 2,
+              y: (vertex.y + closestOnEdge.y) / 2
+            };
+          }
         }
       }
     }
   }
   
-  debug.push(`Minimum separation distance: ${minDistance.toFixed(4)}`);
-  return { colliding, debug, collisionPoint };
+  // Check for collision based on minimum distance threshold
+  if (minDistance < 0.1) {
+    colliding = true;
+    debug.push("Collision detected - features are overlapping");
+  } else {
+    debug.push(`No collision - minimum distance: ${minDistance.toFixed(4)}`);
+  }
+  
+  return { 
+    colliding, 
+    debug, 
+    collisionPoint: closestPoint 
+  };
 };
 
 export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
