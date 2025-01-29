@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState } from 'react';
-import { gjk, sat, linCanny, vClip } from '../utils/collision';
+import { gjk, sat, linCanny, vClip, SweepAndPrune, CollisionConfig, defaultConfig} from '../utils/collision';
 
 type Algorithm = 'GJK' | 'SAT' | 'Lin-Canny' | 'V-Clip';
 type Shape = {
@@ -83,6 +83,12 @@ export const CollisionProvider = ({ children }: { children: React.ReactNode }) =
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const [collisionPoint, setCollisionPoint] = useState<{ x: number; y: number } | null>(null);
 
+  // Configuration for collision detection
+  const collisionConfig: CollisionConfig = {
+    ...defaultConfig,
+    useBroadPhase: true // Enable broad-phase by default
+  };
+
   const setShapePreset = (index: 0 | 1, preset: ShapePreset) => {
     const newPresets = [...selectedPresets] as [ShapePreset, ShapePreset];
     newPresets[index] = preset;
@@ -105,24 +111,50 @@ export const CollisionProvider = ({ children }: { children: React.ReactNode }) =
   };
 
   const checkCollision = (currentShapes: [Shape, Shape]) => {
-    let result;
-    switch (algorithm) {
-      case 'GJK':
-        result = gjk(currentShapes[0], currentShapes[1]);
-        break;
-      case 'SAT':
-        result = sat(currentShapes[0], currentShapes[1]);
-        break;
-      case 'Lin-Canny':
-        result = linCanny(currentShapes[0], currentShapes[1]);
-        break;
-      case 'V-Clip':
-        result = vClip(currentShapes[0], currentShapes[1]);
-        break;
+    let finalResult = {
+      colliding: false,
+      debug: ["Starting collision check..."],
+      collisionPoint: null
+    };
+
+    // Broad-phase: Sweep and Prune
+    const sap = new SweepAndPrune();
+    sap.insert(currentShapes[0]);
+    sap.insert(currentShapes[1]);
+    const pairs = sap.getPairs(); 
+
+    if (pairs.length > 0) {
+      // Narrow-phase: Check all potential pairs
+      pairs.forEach(([shapeA, shapeB]) => {
+        let result;
+        switch (algorithm) {
+          case 'GJK':
+            result = gjk(shapeA, shapeB, collisionConfig);
+            break;
+          case 'SAT':
+            result = sat(shapeA, shapeB, collisionConfig);
+            break;
+          case 'Lin-Canny':
+            result = linCanny(shapeA, shapeB, collisionConfig);
+            break;
+          case 'V-Clip':
+            result = vClip(shapeA, shapeB, collisionConfig);
+            break;
+        }
+        if (result.colliding) {
+          finalResult = {
+            colliding: true,
+            debug: [...finalResult.debug, ...result.debug],
+            collisionPoint: result.collisionPoint || null
+          };
+        }
+      });
+    } else {
+      finalResult.debug.push("Broad-phase: No potential collisions found");
     }
-    setIsColliding(result.colliding);
-    setDebugInfo(result.debug);
-    setCollisionPoint(result.collisionPoint || null);
+    setIsColliding(finalResult.colliding);
+    setDebugInfo(finalResult.debug);
+    setCollisionPoint(finalResult.collisionPoint || null);
   };
 
   return (
