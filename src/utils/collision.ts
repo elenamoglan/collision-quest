@@ -180,7 +180,7 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
 
   let colliding = false;
   let minDistance = Infinity;
-  let closestPoint = findClosestPoint(points1, points2); // Calculate once and store
+  let closestPoint = findClosestPoint(points1, points2); // Initial calculation
   
   // Check all vertex pairs and vertex-edge pairs
   for (let i = 0; i < points1.length; i++) {
@@ -195,6 +195,11 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
       const vertexDistance = vertex.sub(otherVertex).length();
       if (vertexDistance < minDistance) {
         minDistance = vertexDistance;
+        // Update closest point for vertex-vertex case
+        closestPoint = {
+          x: (vertex.x + otherVertex.x) / 2,
+          y: (vertex.y + otherVertex.y) / 2
+        };
         if (vertexDistance < 0.1) {
           colliding = true;
         }
@@ -209,6 +214,11 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
       
       if (edge1Distance < minDistance) {
         minDistance = edge1Distance;
+        // Update closest point for vertex-edge case
+        closestPoint = {
+          x: (vertex.x + edge1ToVertex.x) / 2,
+          y: (vertex.y + edge1ToVertex.y) / 2
+        };
         if (edge1Distance < 0.1) {
           colliding = true;
         }
@@ -216,6 +226,11 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
       
       if (edge2Distance < minDistance) {
         minDistance = edge2Distance;
+        // Update closest point for edge-vertex case
+        closestPoint = {
+          x: (otherVertex.x + edge2ToVertex.x) / 2,
+          y: (otherVertex.y + edge2ToVertex.y) / 2
+        };
         if (edge2Distance < 0.1) {
           colliding = true;
         }
