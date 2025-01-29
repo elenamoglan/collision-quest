@@ -1,6 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import { gjk, sat, linCanny, vClip } from '../utils/collision';
-import { BVH } from '../utils/bvh';
 
 type Algorithm = 'GJK' | 'SAT' | 'Lin-Canny' | 'V-Clip';
 type Shape = {
@@ -83,7 +82,6 @@ export const CollisionProvider = ({ children }: { children: React.ReactNode }) =
   const [isColliding, setIsColliding] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const [collisionPoint, setCollisionPoint] = useState<{ x: number; y: number } | null>(null);
-  const [bvh] = useState(() => new BVH());
 
   const setShapePreset = (index: 0 | 1, preset: ShapePreset) => {
     const newPresets = [...selectedPresets] as [ShapePreset, ShapePreset];
@@ -106,22 +104,7 @@ export const CollisionProvider = ({ children }: { children: React.ReactNode }) =
     checkCollision(newShapes);
   };
 
-  useEffect(() => {
-    bvh.build(shapes);
-  }, [shapes]);
-
   const checkCollision = (currentShapes: [Shape, Shape]) => {
-    // First, broad phase using BVH
-    const potentialCollisions = bvh.query(currentShapes[0]);
-    
-    if (!potentialCollisions.includes(currentShapes[1])) {
-      setIsColliding(false);
-      setDebugInfo(['Broad phase: No collision detected']);
-      setCollisionPoint(null);
-      return;
-    }
-
-    // If broad phase detects potential collision, proceed with narrow phase
     let result;
     switch (algorithm) {
       case 'GJK':
@@ -137,9 +120,8 @@ export const CollisionProvider = ({ children }: { children: React.ReactNode }) =
         result = vClip(currentShapes[0], currentShapes[1]);
         break;
     }
-
     setIsColliding(result.colliding);
-    setDebugInfo(['Broad phase: Potential collision detected', ...result.debug]);
+    setDebugInfo(result.debug);
     setCollisionPoint(result.collisionPoint || null);
   };
 
