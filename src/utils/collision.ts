@@ -101,7 +101,6 @@ const findClosestPoint = (points1: Vector2[], points2: Vector2[]): { x: number; 
   return closestPoint;
 }
 
-// Add the missing helper function
 const getClosestPointOnLineSegment = (point: Vector2, lineStart: Vector2, lineEnd: Vector2): Vector2 => {
   const line = lineEnd.sub(lineStart);
   const len = line.length();
@@ -120,7 +119,7 @@ export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
 
   let minDistance = Infinity;
   let colliding = false;
-  let closestPoint = null;
+  let closestPoint = findClosestPoint(points1, points2); // Calculate once and store
 
   // Find closest features between shapes
   for (let i = 0; i < points1.length; i++) {
@@ -135,10 +134,6 @@ export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
       const vertexDistance = vertex.sub(otherVertex).length();
       if (vertexDistance < minDistance) {
         minDistance = vertexDistance;
-        closestPoint = {
-          x: (vertex.x + otherVertex.x) / 2,
-          y: (vertex.y + otherVertex.y) / 2
-        };
       }
       
       // Check vertex-edge distances
@@ -155,10 +150,6 @@ export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
           
           if (distance < minDistance) {
             minDistance = distance;
-            closestPoint = {
-              x: (vertex.x + closestOnEdge.x) / 2,
-              y: (vertex.y + closestOnEdge.y) / 2
-            };
           }
         }
       }
@@ -189,10 +180,7 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
 
   let colliding = false;
   let minDistance = Infinity;
-  let collisionPoint = null;
-
-  // Find closest features using the findClosestPoint helper
-  const closestPoint = findClosestPoint(points1, points2);
+  let closestPoint = findClosestPoint(points1, points2); // Calculate once and store
   
   // Check all vertex pairs and vertex-edge pairs
   for (let i = 0; i < points1.length; i++) {
@@ -207,10 +195,6 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
       const vertexDistance = vertex.sub(otherVertex).length();
       if (vertexDistance < minDistance) {
         minDistance = vertexDistance;
-        collisionPoint = {
-          x: (vertex.x + otherVertex.x) / 2,
-          y: (vertex.y + otherVertex.y) / 2
-        };
         if (vertexDistance < 0.1) {
           colliding = true;
         }
@@ -225,10 +209,6 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
       
       if (edge1Distance < minDistance) {
         minDistance = edge1Distance;
-        collisionPoint = {
-          x: (vertex.x + edge1ToVertex.x) / 2,
-          y: (vertex.y + edge1ToVertex.y) / 2
-        };
         if (edge1Distance < 0.1) {
           colliding = true;
         }
@@ -236,10 +216,6 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
       
       if (edge2Distance < minDistance) {
         minDistance = edge2Distance;
-        collisionPoint = {
-          x: (otherVertex.x + edge2ToVertex.x) / 2,
-          y: (otherVertex.y + edge2ToVertex.y) / 2
-        };
         if (edge2Distance < 0.1) {
           colliding = true;
         }
@@ -248,7 +224,7 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   }
   
   debug.push(`Minimum separation distance: ${minDistance.toFixed(4)}`);
-  return { colliding, debug, collisionPoint };
+  return { colliding, debug, collisionPoint: closestPoint };
 };
 
 export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
