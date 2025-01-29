@@ -12,6 +12,18 @@ interface CollisionResult {
   collisionPoint?: { x: number; y: number };
 }
 
+interface CollisionConfig {
+  collisionThreshold: number; // Distance threshold for collision
+  epsilon: number;            // Floating-point precision buffer
+  maxIterations: number;      // Max iterations for GJK
+}
+
+const defaultConfig: CollisionConfig = {
+  collisionThreshold: 0.1,
+  epsilon: 1e-6,
+  maxIterations: 32 // For GJK
+};
+
 const transformPoints = (shape: Shape): Vector2[] => {
   return shape.points.map(point => {
     const rotated = {
@@ -25,7 +37,7 @@ const transformPoints = (shape: Shape): Vector2[] => {
   });
 };
 
-const findClosestPoint = (points1: Vector2[], points2: Vector2[]): { x: number; y: number } => {
+const findClosestPoint = (points1: Vector2[], points2: Vector2[], config: CollisionConfig): { x: number; y: number } => {
   let minDistance = Infinity;
   let closestPoint = { x: 0, y: 0 };
 
@@ -40,6 +52,8 @@ const findClosestPoint = (points1: Vector2[], points2: Vector2[]): { x: number; 
       // Get closest point on edge
       const edge = p2Next.sub(p2);
       const edgeLength = edge.length();
+      if (edgeLength < config.epsilon) continue; // Skip degenerate edges
+
       const normalized = edge.scale(1 / edgeLength);
       const pointToStart = p1.sub(p2);
       const projection = pointToStart.dot(normalized);
@@ -74,6 +88,8 @@ const findClosestPoint = (points1: Vector2[], points2: Vector2[]): { x: number; 
       
       const edge = p1Next.sub(p1);
       const edgeLength = edge.length();
+      if (edgeLength < config.epsilon) continue; // Skip degenerate edges
+
       const normalized = edge.scale(1 / edgeLength);
       const pointToStart = p2.sub(p1);
       const projection = pointToStart.dot(normalized);
@@ -99,19 +115,24 @@ const findClosestPoint = (points1: Vector2[], points2: Vector2[]): { x: number; 
   }
   
   return closestPoint;
-}
+};
 
 // Add the missing helper function
-const getClosestPointOnLineSegment = (point: Vector2, lineStart: Vector2, lineEnd: Vector2): Vector2 => {
+const getClosestPointOnLineSegment = (
+  point: Vector2,
+  lineStart: Vector2,
+  lineEnd: Vector2,
+  config: CollisionConfig = defaultConfig // Pass config
+): Vector2 => {
   const line = lineEnd.sub(lineStart);
   const len = line.length();
-  if (len === 0) return lineStart;
-  
+  if (len < config.epsilon) return lineStart; // Degenerate edge
+
   const t = Math.max(0, Math.min(1, point.sub(lineStart).dot(line) / (len * len)));
   return lineStart.add(line.scale(t));
 };
 
-export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
+export const linCanny = (shapeA: Shape, shapeB: Shape, config: CollisionConfig = defaultConfig): CollisionResult => {
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
   const points2 = transformPoints(shapeB);
@@ -123,7 +144,7 @@ export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   let collisionPoint = null;
 
   // Find closest features between shapes
-  const closestPoint = findClosestPoint(points1, points2);
+  const closestPoint = findClosestPoint(points1, points2, config);
   
   // Check if shapes are colliding by checking distances between all vertices and edges
   for (let i = 0; i < points1.length; i++) {
@@ -135,12 +156,13 @@ export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
       
       const edgeVector = edge2.sub(edge1);
       const edgeLength = edgeVector.length();
+      if (edgeLength < config.epsilon) continue; // Skip degenerate edges
+
       const normalizedEdge = edgeVector.scale(1 / edgeLength);
-      
       const vertexToEdge = vertex.sub(edge1);
       const projection = vertexToEdge.dot(normalizedEdge);
       
-      if (projection >= 0 && projection <= edgeLength) {
+      if (projection >= -config.epsilon && projection <= edgeLength + config.epsilon) {
         const closestPoint = edge1.add(normalizedEdge.scale(projection));
         const distance = vertex.sub(closestPoint).length();
         
@@ -152,7 +174,7 @@ export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
           };
         }
         
-        if (distance < 0.1) {
+        if (distance < config.collisionThreshold) {
           colliding = true;
         }
       }
@@ -163,7 +185,7 @@ export const linCanny = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   return { colliding, debug, collisionPoint };
 };
 
-export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
+export const vClip = (shapeA: Shape, shapeB: Shape, config: CollisionConfig = defaultConfig): CollisionResult => {
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
   const points2 = transformPoints(shapeB);
@@ -175,7 +197,7 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   let collisionPoint = null;
 
   // Find closest features using the findClosestPoint helper
-  const closestPoint = findClosestPoint(points1, points2);
+  const closestPoint = findClosestPoint(points1, points2, config);
   
   // Check all vertex pairs and vertex-edge pairs
   for (let i = 0; i < points1.length; i++) {
@@ -194,14 +216,15 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
           x: (vertex.x + otherVertex.x) / 2,
           y: (vertex.y + otherVertex.y) / 2
         };
-        if (vertexDistance < 0.1) {
+        if (vertexDistance < config.collisionThreshold) {
           colliding = true;
         }
       }
       
       // Check vertex-edge distances both ways
-      const edge1ToVertex = getClosestPointOnLineSegment(vertex, otherVertex, nextOtherVertex);
-      const edge2ToVertex = getClosestPointOnLineSegment(otherVertex, vertex, nextVertex);
+      // Example update in vClip:
+      const edge1ToVertex = getClosestPointOnLineSegment(vertex, otherVertex, nextOtherVertex, config);
+      const edge2ToVertex = getClosestPointOnLineSegment(otherVertex, vertex, nextVertex, config);
       
       const edge1Distance = vertex.sub(edge1ToVertex).length();
       const edge2Distance = otherVertex.sub(edge2ToVertex).length();
@@ -212,7 +235,7 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
           x: (vertex.x + edge1ToVertex.x) / 2,
           y: (vertex.y + edge1ToVertex.y) / 2
         };
-        if (edge1Distance < 0.1) {
+        if (edge1Distance < config.collisionThreshold) {
           colliding = true;
         }
       }
@@ -223,7 +246,7 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
           x: (otherVertex.x + edge2ToVertex.x) / 2,
           y: (otherVertex.y + edge2ToVertex.y) / 2
         };
-        if (edge2Distance < 0.1) {
+        if (edge2Distance < config.collisionThreshold) {
           colliding = true;
         }
       }
@@ -234,7 +257,11 @@ export const vClip = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   return { colliding, debug, collisionPoint };
 };
 
-export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
+export const gjk = (
+  shapeA: Shape,
+  shapeB: Shape,
+  config: CollisionConfig = defaultConfig
+): CollisionResult => {
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
   const points2 = transformPoints(shapeB);
@@ -278,7 +305,7 @@ export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   let minDistance = Infinity;
 
   // Main GJK loop with collision point detection
-  for (let i = 0; i < 32; i++) {
+  for (let i = 0; i < config.maxIterations; i++) {
     point = getSupport(direction);
     
     // Track closest point to origin
@@ -296,8 +323,8 @@ export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
     simplex.push(point);
     
     if (handleSimplex(simplex, direction)) {
-      // Calculate collision point using the new method
-      const collisionPoint = findClosestPoint(points1, points2);
+      // Use findClosestPoint with config
+      const collisionPoint = findClosestPoint(points1, points2, config);
       debug.push("Collision detected - origin enclosed by simplex");
       return { colliding: true, debug, collisionPoint };
     }
@@ -307,7 +334,11 @@ export const gjk = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   return { colliding: false, debug };
 };
 
-export const sat = (shapeA: Shape, shapeB: Shape): CollisionResult => {
+export const sat = (
+  shapeA: Shape,
+  shapeB: Shape,
+  config: CollisionConfig = defaultConfig
+): CollisionResult => {
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
   const points2 = transformPoints(shapeB);
@@ -365,8 +396,8 @@ export const sat = (shapeA: Shape, shapeB: Shape): CollisionResult => {
     const overlap = Math.min(projection1.max - projection2.min, projection2.max - projection1.min);
     if (overlap < minOverlap) {
       minOverlap = overlap;
-      // Calculate collision point using the new method
-      collisionPoint = findClosestPoint(points1, points2);
+      // Use findClosestPoint with config
+      collisionPoint = findClosestPoint(points1, points2, config);
     }
   }
   
@@ -374,21 +405,34 @@ export const sat = (shapeA: Shape, shapeB: Shape): CollisionResult => {
   return { colliding: true, debug, collisionPoint };
 };
 
-const handleSimplex = (simplex: Vector2[], direction: Vector2): boolean => {
+const handleSimplex = (
+  simplex: Vector2[],
+  direction: Vector2,
+  config: CollisionConfig = defaultConfig // Pass config
+): boolean => {
   if (simplex.length === 2) {
-    return handleLine(simplex, direction);
+    return handleLine(simplex, direction, config);
   } else if (simplex.length === 3) {
-    return handleTriangle(simplex, direction);
+    return handleTriangle(simplex, direction, config);
   }
   return false;
 };
 
-const handleLine = (simplex: Vector2[], direction: Vector2): boolean => {
-  const a = simplex[1];  // Latest point added
-  const b = simplex[0];  // First point
-  
-  const ab = b.sub(a);   // Vector from A to B
-  const ao = new Vector2(0, 0).sub(a);  // Vector from A to origin
+const handleLine = (
+  simplex: Vector2[],
+  direction: Vector2,
+  config: CollisionConfig
+): boolean => {
+  const a = simplex[1];
+  const b = simplex[0];
+  const ab = b.sub(a);
+  const ao = new Vector2(0, 0).sub(a);
+
+  const abLen = ab.length();
+  if (abLen < config.epsilon) {
+    // Handle degenerate line segment
+    return a.length() <= config.epsilon;
+  }
   
   // Get perpendicular to AB towards origin
   const perp = tripleProduct(ab, ao, ab);
@@ -406,14 +450,17 @@ const handleLine = (simplex: Vector2[], direction: Vector2): boolean => {
   return false;
 };
 
-const handleTriangle = (simplex: Vector2[], direction: Vector2): boolean => {
-  const a = simplex[2];  // Latest point
+const handleTriangle = (
+  simplex: Vector2[],
+  direction: Vector2,
+  config: CollisionConfig
+): boolean => {
+  const a = simplex[2];
   const b = simplex[1];
-  const c = simplex[0];  // First point
-  
+  const c = simplex[0];
   const ab = b.sub(a);
   const ac = c.sub(a);
-  const ao = new Vector2(0, 0).sub(a);  // Vector to origin
+  const ao = new Vector2(0, 0).sub(a);
   
   const abPerp = tripleProduct(ac, ab, ab);
   const acPerp = tripleProduct(ab, ac, ac);
