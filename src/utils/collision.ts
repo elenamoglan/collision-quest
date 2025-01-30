@@ -68,7 +68,7 @@ const transformPoints = (shape: Shape): Vector2[] => {
       y:
         point.x * Math.sin(shape.rotation) + point.y * Math.cos(shape.rotation),
     };
-    return new Vector2( 
+    return new Vector2(
       rotated.x + shape.position.x,
       rotated.y + shape.position.y
     );
@@ -220,63 +220,165 @@ export const linCanny = (
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
   const points2 = transformPoints(shapeB);
+  debug.push("Starting enhanced Lin-Canny algorithm");
 
-  if (
-    config.useBroadPhase &&
-    !aabbOverlap(computeAABB(shapeA), computeAABB(shapeB))
-  ) {
-    return { colliding: false, debug: ["Broad-phase: No AABB overlap"] };
+  let closest = {
+    distance: Infinity,
+    signedDistance: Infinity,
+    point: null as Vector2 | null,
+    type: ""
+  };
+
+  // 1. Containment Check
+  const isInside = (point: Vector2, polygon: Vector2[]): boolean => {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const a = polygon[i];
+      const b = polygon[j];
+      const intersect = ((a.y > point.y) !== (b.y > point.y)) &&
+        (point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
+  // Check if any points are fully contained
+  const containedPoints = [
+    ...points1.filter(p => isInside(p, points2)),
+    ...points2.filter(p => isInside(p, points1))
+  ];
+
+  if (containedPoints.length > 0) {
+    closest = {
+      distance: 0,
+      signedDistance: -Infinity, // Negative indicates penetration
+      point: containedPoints[0],
+      type: "Containment"
+    };
+    debug.push("Containment detected");
   }
 
-  debug.push("Starting Lin-Canny algorithm");
+  // 2. Vertex-Edge Check with Signed Distance
+  const checkVertexEdges = (vertices: Vector2[], edges: Vector2[]) => {
+    vertices.forEach(vertex => {
+      edges.forEach((edgeStart, i) => {
+        const edgeEnd = edges[(i + 1) % edges.length];
+        const edgeVec = edgeEnd.sub(edgeStart);
+        const edgeNormal = new Vector2(-edgeVec.y, edgeVec.x).normalize();
+        
+        // Signed distance calculation
+        const toVertex = vertex.sub(edgeStart);
+        const signedDist = toVertex.dot(edgeNormal);
+        const projection = getClosestPointOnLineSegment(vertex, edgeStart, edgeEnd, config);
+        const absDist = vertex.sub(projection).length();
 
-  let minDistance = Infinity;
-  let colliding = false;
-  let collisionPoint = null;
+        // Track closest penetration or proximity
+        if (signedDist < 0 || absDist < closest.distance) {
+          const effectiveDist = signedDist < 0 ? signedDist : absDist;
+          
+          if (effectiveDist < closest.signedDistance) {
+            closest = {
+              distance: absDist,
+              signedDistance: effectiveDist,
+              point: projection.add(vertex).scale(0.5),
+              type: signedDist < 0 ? "Penetration" : "Proximity"
+            };
+          }
+        }
+      });
+    });
+  };
 
-  // Find closest features between shapes
-  const closestPoint = findClosestPoint(points1, points2, config);
-
-  // Check if shapes are colliding by checking distances between all vertices and edges
-  for (let i = 0; i < points1.length; i++) {
-    const vertex = points1[i];
-
-    for (let j = 0; j < points2.length; j++) {
-      const edge1 = points2[j];
-      const edge2 = points2[(j + 1) % points2.length];
-
-      const edgeVector = edge2.sub(edge1);
-      const edgeLength = edgeVector.length();
-      if (edgeLength < config.epsilon) continue; // Skip degenerate edges
-
-      const normalizedEdge = edgeVector.scale(1 / edgeLength);
-      const vertexToEdge = vertex.sub(edge1);
-      const projection = vertexToEdge.dot(normalizedEdge);
-
-      if (
-        projection >= -config.epsilon &&
-        projection <= edgeLength + config.epsilon
-      ) {
-        const closestPoint = edge1.add(normalizedEdge.scale(projection));
-        const distance = vertex.sub(closestPoint).length();
-
-        if (distance < minDistance) {
-          minDistance = distance;
-          collisionPoint = {
-            x: (vertex.x + closestPoint.x) / 2,
-            y: (vertex.y + closestPoint.y) / 2,
+  // 3. Edge-Edge Intersection Check
+  const checkEdgePairs = () => {
+    points1.forEach((aStart, i) => {
+      const aEnd = points1[(i + 1) % points1.length];
+      points2.forEach((bStart, j) => {
+        const bEnd = points2[(j + 1) % points2.length];
+        
+        // Line segment intersection test
+        const intersect = checkLineIntersection(aStart, aEnd, bStart, bEnd);
+        if (intersect.intersects) {
+          closest = {
+            distance: 0,
+            signedDistance: -Infinity,
+            point: intersect.point,
+            type: "Edge-Intersection"
           };
         }
+      });
+    });
+  };
 
-        if (distance < config.collisionThreshold) {
-          colliding = true;
-        }
-      }
-    }
+  // Only run these checks if no containment found
+  if (closest.type !== "Containment") {
+    checkVertexEdges(points1, points2);
+    checkVertexEdges(points2, points1);
+    checkEdgePairs();
   }
 
-  debug.push(`Minimum separation distance: ${minDistance.toFixed(4)}`);
-  return { colliding, debug, collisionPoint };
+  // Final collision determination
+  const colliding = closest.signedDistance < config.collisionThreshold;
+  debug.push(`Collision point: ${closest.point ? `(${closest.point.x.toFixed(1)}, ${closest.point.y.toFixed(1)})` : "none"}`);
+
+  return {
+    colliding,
+    debug,
+    collisionPoint: closest.point ? { x: closest.point.x, y: closest.point.y } : null
+  };
+};
+
+// Helper: Line segment intersection detection
+const checkLineIntersection = (a1: Vector2, a2: Vector2, b1: Vector2, b2: Vector2) => {
+  const denominator = (b2.y - b1.y) * (a2.x - a1.x) - (b2.x - b1.x) * (a2.y - a1.y);
+  
+  // Lines are parallel
+  if (Math.abs(denominator) < 1e-6) return { intersects: false, point: null };
+
+  const ua = ((b2.x - b1.x) * (a1.y - b1.y) - (b2.y - b1.y) * (a1.x - b1.x)) / denominator;
+  const ub = ((a2.x - a1.x) * (a1.y - b1.y) - (a2.y - a1.y) * (a1.x - b1.x)) / denominator;
+
+  if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+    const x = a1.x + ua * (a2.x - a1.x);
+    const y = a1.y + ua * (a2.y - a1.y);
+    return { intersects: true, point: new Vector2(x, y) };
+  }
+  return { intersects: false, point: null };
+};
+
+// Helper function to find closest points between two edges
+const findClosestEdgePoints = (
+  aStart: Vector2,
+  aEnd: Vector2,
+  bStart: Vector2,
+  bEnd: Vector2,
+  config: CollisionConfig
+) => {
+  const edgeA = aEnd.sub(aStart);
+  const edgeB = bEnd.sub(bStart);
+  const delta = bStart.sub(aStart);
+
+  const a = edgeA.dot(edgeA);
+  const b = edgeA.dot(edgeB);
+  const c = edgeB.dot(edgeB);
+  const d = edgeA.dot(delta);
+  const e = edgeB.dot(delta);
+
+  const denom = a * c - b * b;
+  let s = denom !== 0 ? (b * e - c * d) / denom : 0;
+  let t = (a * e - b * d) / denom;
+
+  s = Math.max(0, Math.min(1, s));
+  t = Math.max(0, Math.min(1, t));
+
+  const pointA = aStart.add(edgeA.scale(s));
+  const pointB = bStart.add(edgeB.scale(t));
+
+  return {
+    pointA,
+    pointB,
+    distance: pointA.sub(pointB).length(),
+  };
 };
 
 export const vClip = (
@@ -287,89 +389,109 @@ export const vClip = (
   const debug: string[] = [];
   const points1 = transformPoints(shapeA);
   const points2 = transformPoints(shapeB);
-
-  if (
-    config.useBroadPhase &&
-    !aabbOverlap(computeAABB(shapeA), computeAABB(shapeB))
-  ) {
-    return { colliding: false, debug: ["Broad-phase: No AABB overlap"] };
-  }
-
   debug.push("Starting V-Clip algorithm");
 
-  let colliding = false;
-  let minDistance = Infinity;
-  let collisionPoint = null;
+  let closest = {
+    distance: Infinity,
+    point: null as Vector2 | null,
+    type: "",
+  };
 
-  // Find closest features using the findClosestPoint helper
-  const closestPoint = findClosestPoint(points1, points2, config);
+  // Improved containment check
+  const checkContainment = () => {
+    const containsPoint = (p: Vector2, polygon: Vector2[]) => {
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x,
+          yi = polygon[i].y;
+        const xj = polygon[j].x,
+          yj = polygon[j].y;
 
-  // Check all vertex pairs and vertex-edge pairs
-  for (let i = 0; i < points1.length; i++) {
-    const vertex = points1[i];
-    const nextVertex = points1[(i + 1) % points1.length];
-
-    for (let j = 0; j < points2.length; j++) {
-      const otherVertex = points2[j];
-      const nextOtherVertex = points2[(j + 1) % points2.length];
-
-      // Check vertex-vertex distance
-      const vertexDistance = vertex.sub(otherVertex).length();
-      if (vertexDistance < minDistance) {
-        minDistance = vertexDistance;
-        collisionPoint = {
-          x: (vertex.x + otherVertex.x) / 2,
-          y: (vertex.y + otherVertex.y) / 2,
-        };
-        if (vertexDistance < config.collisionThreshold) {
-          colliding = true;
-        }
+        const intersect =
+          yi > p.y !== yj > p.y &&
+          p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi;
+        if (intersect) inside = !inside;
       }
+      return inside;
+    };
 
-      // Check vertex-edge distances both ways
-      // Example update in vClip:
-      const edge1ToVertex = getClosestPointOnLineSegment(
-        vertex,
-        otherVertex,
-        nextOtherVertex,
-        config
-      );
-      const edge2ToVertex = getClosestPointOnLineSegment(
-        otherVertex,
-        vertex,
-        nextVertex,
-        config
-      );
-
-      const edge1Distance = vertex.sub(edge1ToVertex).length();
-      const edge2Distance = otherVertex.sub(edge2ToVertex).length();
-
-      if (edge1Distance < minDistance) {
-        minDistance = edge1Distance;
-        collisionPoint = {
-          x: (vertex.x + edge1ToVertex.x) / 2,
-          y: (vertex.y + edge1ToVertex.y) / 2,
-        };
-        if (edge1Distance < config.collisionThreshold) {
-          colliding = true;
-        }
-      }
-
-      if (edge2Distance < minDistance) {
-        minDistance = edge2Distance;
-        collisionPoint = {
-          x: (otherVertex.x + edge2ToVertex.x) / 2,
-          y: (otherVertex.y + edge2ToVertex.y) / 2,
-        };
-        if (edge2Distance < config.collisionThreshold) {
-          colliding = true;
-        }
-      }
+    // Check both directions
+    if (points1.some((p) => containsPoint(p, points2))) {
+      closest = {
+        distance: 0,
+        point: new Vector2(
+          findClosestPoint(points1, points2, config).x,
+          findClosestPoint(points1, points2, config).y
+        ),
+        type: "Containment (ShapeA in ShapeB)",
+      };
+      return true;
     }
+    if (points2.some((p) => containsPoint(p, points1))) {
+      closest = {
+        distance: 0,
+        point: new Vector2(
+          findClosestPoint(points2, points1, config).x,
+          findClosestPoint(points2, points1, config).y
+        ),
+        type: "Containment (ShapeB in ShapeA)",
+      };
+      return true;
+    }
+    return false;
+  };
+
+  // Check edge-vertex distances
+  const checkEdges = () => {
+    const checkPairs = (vertices: Vector2[], edges: Vector2[]) => {
+      vertices.forEach((vertex) => {
+        edges.forEach((edgeStart, i) => {
+          const edgeEnd = edges[(i + 1) % edges.length];
+          const projection = getClosestPointOnLineSegment(
+            vertex,
+            edgeStart,
+            edgeEnd,
+            config
+          );
+          const distance = vertex.sub(projection).length();
+
+          if (distance < closest.distance) {
+            closest = {
+              distance,
+              point: vertex.add(projection).scale(0.5),
+              type: `Edge-Vertex (${distance.toFixed(2)})`,
+            };
+          }
+        });
+      });
+    };
+
+    checkPairs(points1, points2);
+    checkPairs(points2, points1);
+  };
+
+  // Execution flow
+  if (!checkContainment()) {
+    checkEdges();
   }
 
-  debug.push(`Minimum separation distance: ${minDistance.toFixed(4)}`);
-  return { colliding, debug, collisionPoint };
+  // Final result
+  const colliding = closest.distance < config.collisionThreshold;
+  debug.push(
+    `Final collision point: ${
+      closest.point
+        ? `(${closest.point.x.toFixed(2)}, ${closest.point.y.toFixed(2)})`
+        : "none"
+    }`
+  );
+
+  return {
+    colliding,
+    debug,
+    collisionPoint: closest.point
+      ? { x: closest.point.x, y: closest.point.y }
+      : null,
+  };
 };
 
 export const gjk = (
@@ -465,7 +587,10 @@ export const sat = (
   const points1 = transformPoints(shapeA);
   const points2 = transformPoints(shapeB);
 
-  if (config.useBroadPhase && !aabbOverlap(computeAABB(shapeA), computeAABB(shapeB))) {
+  if (
+    config.useBroadPhase &&
+    !aabbOverlap(computeAABB(shapeA), computeAABB(shapeB))
+  ) {
     return { colliding: false, debug: ["Broad-phase: No AABB overlap"] };
   }
 
